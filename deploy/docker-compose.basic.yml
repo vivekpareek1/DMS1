@@ -1,0 +1,42 @@
+
+# BASIC EDITION - $9/user/mo - 10 users, 100GB, Community Support
+# Lightweight - 1GB RAM
+version: '3.8'
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: vaultdms
+      POSTGRES_USER: vault
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vault -d vaultdms"]
+      interval: 10s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory 100mb --maxmemory-policy allkeys-lru
+
+  backend:
+    build: ../backend
+    environment:
+      EDITION: BASIC
+      DATABASE_URL: postgresql://vault:${DB_PASSWORD}@postgres:5432/vaultdms
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${GOOGLE_SERVICE_ACCOUNT_JSON}
+      DRIVE_ROOT_FOLDER_ID: ${DRIVE_ROOT_FOLDER_ID}
+      LOG_RETENTION_DAYS: 30
+    ports: ["3001:3001"]
+    mem_limit: 512m
+
+  frontend:
+    build: ../frontend
+    environment:
+      NEXT_PUBLIC_EDITION: BASIC
+      NEXT_PUBLIC_API_URL: ${API_URL:-http://localhost:3001}
+    ports: ["3000:3000"]
+
+volumes: { pgdata: }

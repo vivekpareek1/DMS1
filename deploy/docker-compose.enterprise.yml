@@ -1,0 +1,82 @@
+
+# ENTERPRISE EDITION - $79/user/mo - Unlimited, Full DLP + Screenshot Protection
+# My Best Suggested Features Included
+version: '3.8'
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: vaultdms
+      POSTGRES_USER: vault
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vault -d vaultdms"]
+      interval: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 5
+
+  # ClamAV for virus scan (Enterprise)
+  clamav:
+    image: clamav/clamav:latest
+    ports: ["3310:3310"]
+
+  backend:
+    build: ../backend
+    environment:
+      EDITION: ENTERPRISE
+      DATABASE_URL: postgresql://vault:${DB_PASSWORD}@postgres:5432/vaultdms
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${GOOGLE_SERVICE_ACCOUNT_JSON}
+      DRIVE_ROOT_FOLDER_ID: ${DRIVE_ROOT_FOLDER_ID}
+      LOG_RETENTION_DAYS: 2555 # 7 years
+      LOG_ARCHIVE_MODE: "true"
+      LOG_LEGAL_HOLD: ${LOG_LEGAL_HOLD:-false}
+      CLAMAV_ENABLED: "true"
+      FORGE_ENABLED: "true"
+      DLP_PII_DETECTION: "true"
+      DLP_SCREENSHOT_PROTECTION: "true"
+      DLP_WATERMARK: "DYNAMIC"
+    ports: ["3001:3001"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      clamav: { condition: service_started }
+
+  frontend:
+    build: ../frontend
+    environment:
+      NEXT_PUBLIC_EDITION: ENTERPRISE
+      NEXT_PUBLIC_API_URL: ${API_URL:-http://localhost:3001}
+      NEXT_PUBLIC_DLP_WATERMARK: "DYNAMIC"
+      NEXT_PUBLIC_DLP_SCREENSHOT: "true"
+    ports: ["3000:3000"]
+
+  # BullMQ Worker for thumbnail + DLP scanning
+  worker:
+    build: ../backend
+    command: npm run worker:start
+    environment:
+      EDITION: ENTERPRISE
+      DATABASE_URL: postgresql://vault:${DB_PASSWORD}@postgres:5432/vaultdms
+      REDIS_URL: redis://redis:6379
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${GOOGLE_SERVICE_ACCOUNT_JSON}
+      DRIVE_ROOT_FOLDER_ID: ${DRIVE_ROOT_FOLDER_ID}
+    depends_on:
+      - postgres
+      - redis
+
+volumes:
+  pgdata:
+  redisdata:

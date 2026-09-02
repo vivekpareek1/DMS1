@@ -1,0 +1,203 @@
+
+// Vault DMS - Prisma Schema with Company Logo + Subscription + Payment
+// 3 Editions: BASIC, STANDARD, ENTERPRISE
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Edition {
+  BASIC
+  STANDARD
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  PENDING // Created but payment not done
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+  TRIALING
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+model Company {
+  id          String   @id @default(cuid())
+  name        String
+  domain      String?  @unique // company.com
+  logoUrl     String?  // Company logo - white-label feature
+  logoDriveId String?  // Stored in Drive
+  primaryColor String? @default("#000000") // Brand color
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  users       User[]
+  subscriptions Subscription[]
+  folders     Folder[]
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  password  String?  // nullable: users created via Google SSO have no local password
+  googleId  String?  @unique // Google account "sub" claim
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id])
+  isCompanyAdmin Boolean @default(false) // Can upload logo
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  roles     UserRole[]
+  permissions Permission[]
+}
+
+model Subscription {
+  id              String             @id @default(cuid())
+  companyId       String
+  company         Company            @relation(fields: [companyId], references: [id])
+  edition         Edition
+  status          SubscriptionStatus @default(PENDING)
+  billingCycle    String             @default("MONTHLY") // MONTHLY or YEARLY
+  seats           Int                @default(1) // Number of users
+  pricePerSeatINR Int                // INR price at time of subscription
+  totalAmountINR  Int                // seats * price
+  gstAmountINR    Int                // 18% GST
+  grandTotalINR   Int                // total + gst
+  
+  // Payment
+  razorpayOrderId String?  @unique
+  razorpayPaymentId String? @unique
+  stripePaymentIntentId String? @unique
+  
+  // Dates
+  startDate       DateTime?
+  endDate         DateTime?
+  trialEndsAt     DateTime?
+  
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  
+  payments        Payment[]
+}
+
+model Payment {
+  id              String        @id @default(cuid())
+  subscriptionId  String
+  subscription    Subscription  @relation(fields: [subscriptionId], references: [id])
+  amountINR       Int
+  gstINR          Int
+  grandTotalINR   Int
+  status          PaymentStatus @default(PENDING)
+  method          String?       // razorpay, stripe, credit_card
+  razorpayPaymentId String?     @unique
+  razorpayOrderId String?
+  stripePaymentIntentId String? @unique
+  cardLast4       String?       // Last 4 digits of card
+  cardBrand       String?       // Visa, Mastercard
+  failureReason   String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+model Role {
+  id    String @id @default(cuid())
+  name  String @unique // ADMIN, EDITOR, VIEWER
+  users UserRole[]
+}
+
+model UserRole {
+  id     String @id @default(cuid())
+  userId String
+  roleId String
+  user   User   @relation(fields: [userId], references: [id])
+  role   Role   @relation(fields: [roleId], references: [id])
+  @@unique([userId, roleId])
+}
+
+model Folder {
+  id               String  @id @default(cuid())
+  name             String
+  parentId         String?
+  parent           Folder? @relation("FolderTree", fields: [parentId], references: [id])
+  children         Folder[] @relation("FolderTree")
+  companyId        String?
+  company          Company? @relation(fields: [companyId], references: [id])
+  driveFolderId    String? @unique
+  breakInheritance Boolean @default(false)
+  createdAt        DateTime @default(now())
+}
+
+model File {
+  id          String   @id @default(cuid())
+  name        String
+  mimeType    String
+  size        Int
+  md5         String?
+  folderId    String
+  driveFileId String?  @unique
+  classification String @default("INTERNAL") // PUBLIC, INTERNAL, CONFIDENTIAL, RESTRICTED
+  isLocked    Boolean  @default(false)
+  lockedById  String?
+  lockedAt    DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  versions    FileVersion[]
+}
+
+model FileVersion {
+  id          String   @id @default(cuid())
+  fileId      String
+  file        File     @relation(fields: [fileId], references: [id])
+  version     Int
+  driveFileId String
+  size        Int
+  createdById String
+  comment     String?
+  createdAt   DateTime @default(now())
+
+  @@unique([fileId, version])
+}
+
+model Permission {
+  id          String  @id @default(cuid())
+  userId      String?
+  roleId      String?
+  fileId      String?
+  folderId    String?
+  canView     Boolean @default(false)
+  canDownload Boolean @default(false)
+  canEdit     Boolean @default(false)
+  canDelete   Boolean @default(false)
+  canManagePerms Boolean @default(false)
+  user        User?   @relation(fields: [userId], references: [id])
+  createdAt   DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  userEmail String
+  action    String
+  fileId    String?
+  folderId  String?
+  details   Json?
+  ip        String?
+  hash      String   @unique
+  prevHash  String
+  createdAt DateTime @default(now())
+}
