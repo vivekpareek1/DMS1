@@ -117,6 +117,7 @@ model Role {
   id    String @id @default(cuid())
   name  String @unique // ADMIN, EDITOR, VIEWER
   users UserRole[]
+  permissions Permission[]
 }
 
 model UserRole {
@@ -185,6 +186,7 @@ model Permission {
   canDelete   Boolean @default(false)
   canManagePerms Boolean @default(false)
   user        User?   @relation(fields: [userId], references: [id])
+  role        Role?   @relation(fields: [roleId], references: [id])
   createdAt   DateTime @default(now())
 }
 

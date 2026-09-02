@@ -29,8 +29,16 @@ export class CompanyService {
     const company = await this.prisma.company.findUnique({ where: { id: companyId } });
     if (!company) throw new BadRequestException('Company not found');
 
-    // Upload to Drive - company-logos folder
-    const logosFolderId = await this.getOrCreateLogosFolder(company.driveFolderId || process.env.DRIVE_ROOT_FOLDER_ID);
+    // Upload to Drive - company-logos folder.
+    // NOTE: Company has no per-company Drive root folder field yet (only
+    // Folder.driveFolderId exists, which is unrelated) - every company
+    // currently shares one global logos root via DRIVE_ROOT_FOLDER_ID.
+    // Add a `driveFolderId` field to Company + a migration if per-company
+    // Drive roots are needed later.
+    if (!process.env.DRIVE_ROOT_FOLDER_ID) {
+      throw new BadRequestException('Server misconfigured: DRIVE_ROOT_FOLDER_ID not set');
+    }
+    const logosFolderId = await this.getOrCreateLogosFolder(process.env.DRIVE_ROOT_FOLDER_ID);
     
     const driveFile = await this.driveService.uploadResumable(
       logosFolderId,

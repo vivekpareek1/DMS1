@@ -54,6 +54,9 @@ export class FilesController {
     // Check file lock if updating existing? For new file, no lock needed
     const folder = await this.prisma.folder.findUnique({ where: { id: body.folderId } });
     if (!folder) throw new NotFoundException('Folder not found');
+    if (!folder.driveFolderId) {
+      throw new BadRequestException('This folder has no linked Drive folder yet - cannot upload here');
+    }
 
     try {
       // 1. Virus scan (ClamAV) - P1 but added
